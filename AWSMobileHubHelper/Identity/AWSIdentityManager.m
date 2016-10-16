@@ -169,10 +169,17 @@ static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
 - (BOOL)interceptApplication:(UIApplication *)application
 didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     Class signInProviderClass = nil;
-    if ([[NSUserDefaults standardUserDefaults] objectForKey:@"Facebook"]) {
-        signInProviderClass = NSClassFromString(@"AWSFacebookSignInProvider");
-    } else if ([[NSUserDefaults standardUserDefaults] objectForKey:@"Google"]) {
-        signInProviderClass = NSClassFromString(@"AWSGoogleSignInProvider");
+    AWSServiceInfo *serviceInfo = [[AWSInfo defaultAWSInfo] defaultServiceInfo:AWSInfoIdentityManager];
+    NSDictionary *signInProviderClassDictionary = [serviceInfo.infoDictionary objectForKey:@"SignInProviderClassDictionary"];
+    
+    // loop through the Info.plist AWS->IdentityManager->Default->SignInProviderClass dictionary
+    // which contains the NSUserDefaults key, and the class name of the SignInProvider
+    // this way, developer and user pools IdP's can maintain a session too (not just
+    // Google and Facebook) - Dictionary looks like "Google":"AWSGoogleSignInProvider" etc.
+    for (NSString *key in signInProviderClassDictionary) {
+        if ([[NSUserDefaults standardUserDefaults] objectForKey:key]) {
+            signInProviderClass = NSClassFromString([signInProviderClassDictionary objectForKey:key]);
+        }
     }
     
     self.currentSignInProvider = [signInProviderClass sharedInstance];
