@@ -45,12 +45,20 @@ FOUNDATION_EXPORT NSString *const AWSIdentityManagerDidSignOutNotification;
 @property (nonatomic, readonly, nullable) NSString *identityId;
 
 /**
+ * Some processes in a mobile app require access to the currentSignInProvider.
+ * For example with custom OpenIdConnect or CognitoUserPools providers you may
+ * need to have access to the provider in order to sign-up a user, or recall a forgotten
+ * password.  The SignInProvider class is a good place to encapsulate interfacing with
+ * the authentication provider, but we need to be able to get the currentSignInProvider
+ */
+@property (nonatomic, readonly) id<AWSSignInProvider> currentSignInProvider;
+
+/**
  * Completes login process, sends notification of SignIn state change
  * clears cached temporary credentials and gets credentials. Once the
  * AWSSignInProvider completes the login, it must call completLogin
  */
 - (void)completeLogin;
-
 
 /**
  Returns the Identity Manager singleton instance configured using the information provided in `Info.plist` file.
