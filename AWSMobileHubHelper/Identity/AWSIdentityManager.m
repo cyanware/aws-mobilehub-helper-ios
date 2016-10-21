@@ -18,21 +18,21 @@ NSString *const AWSIdentityManagerDidSignOutNotification = @"com.amazonaws.AWSId
 typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
 
 @interface AWSIdentityManager()
-
-@property (nonatomic, strong) AWSCognitoCredentialsProvider *credentialsProvider;
-@property (atomic, copy) AWSIdentityManagerCompletionBlock completionHandler;
-
-@property (nonatomic, strong) id<AWSSignInProvider> currentSignInProvider;
-
-@end
+    
+    @property (nonatomic, strong) AWSCognitoCredentialsProvider *credentialsProvider;
+    @property (atomic, copy) AWSIdentityManagerCompletionBlock completionHandler;
+    
+    @property (nonatomic, strong) id<AWSSignInProvider> currentSignInProvider;
+    
+    @end
 
 @implementation AWSIdentityManager
-
-static NSString *const AWSInfoIdentityManager = @"IdentityManager";
-static NSString *const AWSInfoRoot = @"AWS";
-static NSString *const AWSInfoMobileHub = @"MobileHub";
-static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
-
+    
+    static NSString *const AWSInfoIdentityManager = @"IdentityManager";
+    static NSString *const AWSInfoRoot = @"AWS";
+    static NSString *const AWSInfoMobileHub = @"MobileHub";
+    static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
+    
 + (instancetype)defaultIdentityManager {
     static AWSIdentityManager *_defaultIdentityManager = nil;
     static dispatch_once_t onceToken;
@@ -49,7 +49,7 @@ static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
     
     return _defaultIdentityManager;
 }
-
+    
 - (instancetype)initWithCredentialProvider:(AWSServiceInfo *)serviceInfo {
     if (self = [super init]) {
         [AWSLogger defaultLogger].logLevel = AWSLogLevelVerbose;
@@ -66,9 +66,9 @@ static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
     }
     return self;
 }
-
+    
 #pragma mark - AWSIdentityProviderManager
-
+    
 - (AWSTask<NSDictionary<NSString *, NSString *> *> *)logins {
     if (!self.currentSignInProvider) {
         return [AWSTask taskWithResult:nil];
@@ -78,29 +78,42 @@ static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
         return [AWSTask taskWithResult:@{self.currentSignInProvider.identityProviderName : token}];
     }];
 }
-
+    
 #pragma mark -
-
+    
 - (NSString *)identityId {
     return self.credentialsProvider.identityId;
 }
-
+    
 - (BOOL)isLoggedIn {
     return self.currentSignInProvider.isLoggedIn;
 }
-
+    
 - (NSURL *)imageURL {
     return self.currentSignInProvider.imageURL;
 }
-
+    
 - (NSString *)userName {
     return self.currentSignInProvider.userName;
 }
-
+    
+- (NSString *)authenticatedBy {
+    NSString *provider = nil;
+    AWSServiceInfo *serviceInfo = [[AWSInfo defaultAWSInfo] defaultServiceInfo:AWSInfoIdentityManager];
+    NSDictionary *signInProviderKeyDictionary = [serviceInfo.infoDictionary objectForKey:@"SignInProviderKeyDictionary"];
+    provider = [signInProviderKeyDictionary objectForKey:NSStringFromClass([self.currentSignInProvider class])];
+    if (provider) {
+        return provider;
+    } else {
+        NSLog(@"SignInProviderKeyDictionary is not configured properly");
+        return nil;
+    }
+}
+    
 - (void)wipeAll {
     [self.credentialsProvider clearKeychain];
 }
-
+    
 - (void)logoutWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
     if ([self.currentSignInProvider isLoggedIn]) {
         [self.currentSignInProvider logout];
@@ -125,7 +138,7 @@ static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
         return nil;
     }];
 }
-
+    
 - (void)loginWithSignInProvider:(id)signInProvider
               completionHandler:(void (^)(id result, NSError *error))completionHandler {
     self.currentSignInProvider = signInProvider;
@@ -133,7 +146,7 @@ static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
     self.completionHandler = completionHandler;
     [self.currentSignInProvider login:completionHandler];
 }
-
+    
 - (void)resumeSessionWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
     self.completionHandler = completionHandler;
     
@@ -143,7 +156,7 @@ static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
         [self completeLogin];
     }
 }
-
+    
 - (void)completeLogin {
     // Force a refresh of credentials to see if we need to merge
     [self.credentialsProvider invalidateCachedTemporaryCredentials];
@@ -165,20 +178,21 @@ static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
         return nil;
     }];
 }
-
+    
 - (BOOL)interceptApplication:(UIApplication *)application
 didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     Class signInProviderClass = nil;
     AWSServiceInfo *serviceInfo = [[AWSInfo defaultAWSInfo] defaultServiceInfo:AWSInfoIdentityManager];
-    NSDictionary *signInProviderClassDictionary = [serviceInfo.infoDictionary objectForKey:@"SignInProviderClassDictionary"];
+    NSDictionary *signInProviderKeyDictionary = [serviceInfo.infoDictionary objectForKey:@"SignInProviderKeyDictionary"];
     
     // loop through the Info.plist AWS->IdentityManager->Default->SignInProviderClass dictionary
-    // which contains the NSUserDefaults key, and the class name of the SignInProvider
+    // which contains the class name of the SignInProvider and the NSUserDefaults key,
     // this way, developer and user pools IdP's can maintain a session too (not just
-    // Google and Facebook) - Dictionary looks like "Google":"AWSGoogleSignInProvider" etc.
-    for (NSString *key in signInProviderClassDictionary) {
-        if ([[NSUserDefaults standardUserDefaults] objectForKey:key]) {
-            signInProviderClass = NSClassFromString([signInProviderClassDictionary objectForKey:key]);
+    // Google and Facebook) - Dictionary looks like "AWSGoogleSignInProvider":"Google" etc.
+    for (NSString *key in signInProviderKeyDictionary) {
+        if ([[NSUserDefaults standardUserDefaults] objectForKey:[signInProviderKeyDictionary objectForKey:key]]) {
+            signInProviderClass = NSClassFromString(key);
+            
         }
     }
     
@@ -196,7 +210,7 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
         return YES;
     }
 }
-
+    
 - (BOOL)interceptApplication:(UIApplication *)application
                      openURL:(NSURL *)url
            sourceApplication:(NSString *)sourceApplication
@@ -211,5 +225,5 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
         return YES;
     }
 }
-
-@end
+    
+    @end
