@@ -28,6 +28,11 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
 
 @implementation AWSIdentityManager
     
+    NSDictionary<NSString *, NSString *> *loginCache;
+    BOOL mergingIdentityProviderManager;
+    
+    
+    
     static NSString *const AWSInfoIdentityManager = @"IdentityManager";
     static NSString *const AWSInfoRoot = @"AWS";
     static NSString *const AWSInfoMobileHub = @"MobileHub";
@@ -45,6 +50,8 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
                                          userInfo:nil];
         }
         _defaultIdentityManager = [[AWSIdentityManager alloc] initWithCredentialProvider:serviceInfo];
+        loginCache = [[NSDictionary<NSString *, NSString *> alloc] init];
+        mergingIdentityProviderManager = [serviceInfo.infoDictionary objectForKey:@"Allow Identity Merging"];
     });
     
     return _defaultIdentityManager;
@@ -75,8 +82,30 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     }
     return [[self.currentSignInProvider token] continueWithSuccessBlock:^id _Nullable(AWSTask<NSString *> * _Nonnull task) {
         NSString *token = task.result;
-        return [AWSTask taskWithResult:@{self.currentSignInProvider.identityProviderName : token}];
+        [self mergeLogins:@{self.currentSignInProvider.identityProviderName : token}];
+        return [AWSTask taskWithResult: loginCache];
     }];
+}
+    
+- (void)mergeLogins:(NSDictionary<NSString *,NSString *> *)logins {
+    if (!mergingIdentityProviderManager) {
+        loginCache = [logins copy]; // not merging?  replace the cache with what they passed
+    } else { // merging, add the new login to the cache
+        NSMutableDictionary<NSString *, NSString *> *merge = [[NSMutableDictionary<NSString *, NSString *> alloc] init];
+        merge = [loginCache mutableCopy];
+        
+        for (NSString* key in logins) {
+            merge[key] = logins[key];
+        }
+        loginCache = [merge copy];
+    }
+}
+    
+- (void)dropLogin:(NSString *)key {
+    NSMutableDictionary<NSString *, NSString *> *shorterList = [[NSMutableDictionary<NSString *, NSString *> alloc] init];
+    shorterList = [loginCache mutableCopy];
+    [shorterList removeObjectForKey: key];
+    loginCache = [shorterList copy];
 }
     
 #pragma mark -
@@ -116,12 +145,17 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     
 - (void)logoutWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
     if ([self.currentSignInProvider isLoggedIn]) {
+        // must shrink the logins cache so he can log back in
+        [self dropLogin: [self.currentSignInProvider identityProviderName]];
         [self.currentSignInProvider logout];
     }
     
     [self wipeAll];
     
     self.currentSignInProvider = nil;
+    
+    //before we go get a new identityId, lets see if we are still logged in with another provider
+    [self interceptApplication: [UIApplication sharedApplication] didFinishLaunchingWithOptions:nil];
     
     [[self.credentialsProvider getIdentityId] continueWithBlock:^id _Nullable(AWSTask<NSString *> * _Nonnull task) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -141,6 +175,12 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     
 - (void)loginWithSignInProvider:(id)signInProvider
               completionHandler:(void (^)(id result, NSError *error))completionHandler {
+    // modify to allow multiple logins only if Allow Identity Merging is YES in Info.plist
+    // Each time loginWithSignInprovider runs the existing sign in provider keeps it's active
+    // session indicator in NSUserDefaults.  The current sign in provider is changed but
+    // we will return logins for all signin providers with an NSUserDefault key of YES
+    // Logout will log out the current sign in provider an resume a session with any
+    // remaining ones.
     self.currentSignInProvider = signInProvider;
     
     self.completionHandler = completionHandler;
@@ -189,10 +229,11 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     // which contains the class name of the SignInProvider and the NSUserDefaults key,
     // this way, developer and user pools IdP's can maintain a session too (not just
     // Google and Facebook) - Dictionary looks like "AWSGoogleSignInProvider":"Google" etc.
+    // if you are supporting merging identities, the current sign in provider will be the last
+    // one listed in the dictionary (are dictionaries ordered) with a key in NSUserDefaults.
     for (NSString *key in signInProviderKeyDictionary) {
         if ([[NSUserDefaults standardUserDefaults] objectForKey:[signInProviderKeyDictionary objectForKey:key]]) {
             signInProviderClass = NSClassFromString(key);
-            
         }
     }
     
