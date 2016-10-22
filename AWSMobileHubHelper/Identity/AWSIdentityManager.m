@@ -29,6 +29,7 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
 @implementation AWSIdentityManager
     
     NSDictionary<NSString *, NSString *> *loginCache;
+    NSMutableArray *signInProviderCache; // keep track of all active AWSSignInProviders
     BOOL mergingIdentityProviderManager;
     
     
@@ -52,6 +53,7 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
         _defaultIdentityManager = [[AWSIdentityManager alloc] initWithCredentialProvider:serviceInfo];
         loginCache = [[NSDictionary<NSString *, NSString *> alloc] init];
         mergingIdentityProviderManager = [serviceInfo.infoDictionary objectForKey:@"Allow Identity Merging"];
+        signInProviderCache = [[NSMutableArray alloc] initWithCapacity:10];
     });
     
     return _defaultIdentityManager;
@@ -139,6 +141,12 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     }
 }
     
+- (NSString *)providerKey:(id<AWSSignInProvider>)signInProvider {
+    AWSServiceInfo *serviceInfo = [[AWSInfo defaultAWSInfo] defaultServiceInfo:AWSInfoIdentityManager];
+    NSDictionary *signInProviderKeyDictionary = [serviceInfo.infoDictionary objectForKey:@"SignInProviderKeyDictionary"];
+    return [signInProviderKeyDictionary objectForKey:NSStringFromClass([signInProvider class])];
+}
+    
 - (void)wipeAll {
     [self.credentialsProvider clearKeychain];
 }
@@ -151,7 +159,7 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     }
     
     [self wipeAll];
-    
+    [signInProviderCache removeObject:self.currentSignInProvider];
     self.currentSignInProvider = nil;
     
     //before we go get a new identityId, lets see if we are still logged in with another provider
@@ -184,13 +192,17 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     self.currentSignInProvider = signInProvider;
     
     self.completionHandler = completionHandler;
+    [signInProviderCache addObject:signInProvider];
     [self.currentSignInProvider login:completionHandler];
 }
     
 - (void)resumeSessionWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
     self.completionHandler = completionHandler;
     
-    [self.currentSignInProvider reloadSession];
+    for (id<AWSSignInProvider> provider  in signInProviderCache) {
+        [provider reloadSession]; // reload each of the providers that have active sessions
+        NSLog(@"Reloading provider: %@", [self providerKey:provider ]);
+    }
     
     if (self.currentSignInProvider == nil) {
         [self completeLogin];
@@ -222,6 +234,7 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
 - (BOOL)interceptApplication:(UIApplication *)application
 didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     Class signInProviderClass = nil;
+    
     AWSServiceInfo *serviceInfo = [[AWSInfo defaultAWSInfo] defaultServiceInfo:AWSInfoIdentityManager];
     NSDictionary *signInProviderKeyDictionary = [serviceInfo.infoDictionary objectForKey:@"SignInProviderKeyDictionary"];
     
@@ -234,22 +247,23 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     for (NSString *key in signInProviderKeyDictionary) {
         if ([[NSUserDefaults standardUserDefaults] objectForKey:[signInProviderKeyDictionary objectForKey:key]]) {
             signInProviderClass = NSClassFromString(key);
+            
+            self.currentSignInProvider = [signInProviderClass sharedInstance];
+            if (signInProviderClass && !self.currentSignInProvider) {
+                NSLog(@"Unable to locate the SignIn Provider SDK. Signing Out any existing session...");
+                [self wipeAll];
+            }
+            
+            if (self.currentSignInProvider) {
+                [signInProviderCache addObject: self.currentSignInProvider];
+                if ([self.currentSignInProvider interceptApplication:application
+                                       didFinishLaunchingWithOptions:launchOptions]) {
+                }
+            }
         }
     }
     
-    self.currentSignInProvider = [signInProviderClass sharedInstance];
-    
-    if (signInProviderClass && !self.currentSignInProvider) {
-        NSLog(@"Unable to locate the SignIn Provider SDK. Signing Out any existing session...");
-        [self wipeAll];
-    }
-    
-    if (self.currentSignInProvider) {
-        return [self.currentSignInProvider interceptApplication:application
-                                  didFinishLaunchingWithOptions:launchOptions];
-    } else {
-        return YES;
-    }
+    return YES;
 }
     
 - (BOOL)interceptApplication:(UIApplication *)application
