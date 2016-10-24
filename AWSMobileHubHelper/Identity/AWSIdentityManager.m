@@ -27,18 +27,21 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     @end
 
 @implementation AWSIdentityManager
-    
-    NSDictionary<NSString *, NSString *> *loginCache;
-    NSMutableArray *signInProviderCache; // keep track of all active AWSSignInProviders
-    BOOL mergingIdentityProviderManager;
-    
-    
-    
-    static NSString *const AWSInfoIdentityManager = @"IdentityManager";
-    static NSString *const AWSInfoRoot = @"AWS";
-    static NSString *const AWSInfoMobileHub = @"MobileHub";
-    static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
-    
+
+NSDictionary<NSString *, NSString *> *loginCache;
+NSDictionary<NSString *, id<AWSSignInProvider>> *signInProviderCache; // keep track of all active AWSSignInProviders
+BOOL mergingIdentityProviderManager;
+BOOL multiAccountIdentityProviderManager;
+
+
+
+static NSString *const AWSInfoIdentityManager = @"IdentityManager";
+static NSString *const AWSInfoRoot = @"AWS";
+static NSString *const AWSInfoMobileHub = @"MobileHub";
+static NSString *const AWSInfoProjectClientId = @"ProjectClientId";
+static NSString *const AWSInfoAllowIdentityMerging = @"Allow Identity Merging";
+static NSString *const AWSInfoAllowSimultaneousActiveAccounts = @"Allow Simultaneous Active Accounts";
+
 + (instancetype)defaultIdentityManager {
     static AWSIdentityManager *_defaultIdentityManager = nil;
     static dispatch_once_t onceToken;
@@ -52,13 +55,14 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
         }
         _defaultIdentityManager = [[AWSIdentityManager alloc] initWithCredentialProvider:serviceInfo];
         loginCache = [[NSDictionary<NSString *, NSString *> alloc] init];
-        mergingIdentityProviderManager = [serviceInfo.infoDictionary objectForKey:@"Allow Identity Merging"];
-        signInProviderCache = [[NSMutableArray alloc] initWithCapacity:10];
+        mergingIdentityProviderManager = [[serviceInfo.infoDictionary valueForKey:AWSInfoAllowIdentityMerging] boolValue];
+        multiAccountIdentityProviderManager =  [[serviceInfo.infoDictionary valueForKey:AWSInfoAllowSimultaneousActiveAccounts  ] boolValue];
+        signInProviderCache = [[NSDictionary<NSString *, id<AWSSignInProvider>> alloc] init];
     });
     
     return _defaultIdentityManager;
 }
-    
+
 - (instancetype)initWithCredentialProvider:(AWSServiceInfo *)serviceInfo {
     if (self = [super init]) {
         [AWSLogger defaultLogger].logLevel = AWSLogLevelVerbose;
@@ -75,9 +79,9 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     }
     return self;
 }
-    
+
 #pragma mark - AWSIdentityProviderManager
-    
+
 - (AWSTask<NSDictionary<NSString *, NSString *> *> *)logins {
     if (!self.currentSignInProvider) {
         return [AWSTask taskWithResult:nil];
@@ -88,7 +92,7 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
         return [AWSTask taskWithResult: loginCache];
     }];
 }
-    
+
 - (void)mergeLogins:(NSDictionary<NSString *,NSString *> *)logins {
     if (!mergingIdentityProviderManager) {
         loginCache = [logins copy]; // not merging?  replace the cache with what they passed
@@ -102,66 +106,88 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
         loginCache = [merge copy];
     }
 }
-    
+
 - (void)dropLogin:(NSString *)key {
     NSMutableDictionary<NSString *, NSString *> *shorterList = [[NSMutableDictionary<NSString *, NSString *> alloc] init];
     shorterList = [loginCache mutableCopy];
     [shorterList removeObjectForKey: key];
     loginCache = [shorterList copy];
 }
-    
+
+- (NSArray *)activeProviders {
+    return [signInProviderCache allValues];
+}
+- (void)activateProvider: (id<AWSSignInProvider>)signInProvider {
+    NSMutableDictionary<NSString *, id<AWSSignInProvider>> *mergeCache = [[NSMutableDictionary<NSString *, id<AWSSignInProvider>> alloc] init];
+    if (multiAccountIdentityProviderManager) {
+        mergeCache = [signInProviderCache mutableCopy];
+    }
+    [mergeCache setValue:signInProvider forKey:[signInProvider identityProviderName ]];
+    signInProviderCache = [mergeCache copy];
+}
+- (void)deactivateProvider: (id<AWSSignInProvider>)signInProvider {
+    NSMutableDictionary<NSString *, id<AWSSignInProvider>> *mergeCache = [[NSMutableDictionary<NSString *, id<AWSSignInProvider>> alloc] init];
+    mergeCache = [signInProviderCache mutableCopy];
+    [mergeCache  removeObjectForKey:[signInProvider identityProviderName ]];
+    signInProviderCache = [mergeCache copy];
+}
+
+
 #pragma mark -
-    
+
 - (NSString *)identityId {
     return self.credentialsProvider.identityId;
 }
-    
+
 - (BOOL)isLoggedIn {
     return self.currentSignInProvider.isLoggedIn;
 }
-    
+
 - (NSURL *)imageURL {
     return self.currentSignInProvider.imageURL;
 }
-    
+
 - (NSString *)userName {
     return self.currentSignInProvider.userName;
 }
-    
+
 - (NSString *)authenticatedBy {
+    if (self.currentSignInProvider == nil ) {
+        return @"Guest";
+    }
+    return [self providerKey: self.currentSignInProvider];
+}
+
+- (NSString *)providerKey:(id<AWSSignInProvider>)signInProvider {
     NSString *provider = nil;
     AWSServiceInfo *serviceInfo = [[AWSInfo defaultAWSInfo] defaultServiceInfo:AWSInfoIdentityManager];
     NSDictionary *signInProviderKeyDictionary = [serviceInfo.infoDictionary objectForKey:@"SignInProviderKeyDictionary"];
-    provider = [signInProviderKeyDictionary objectForKey:NSStringFromClass([self.currentSignInProvider class])];
+    provider = [signInProviderKeyDictionary objectForKey:NSStringFromClass([signInProvider class])];
     if (provider) {
         return provider;
     } else {
-        NSLog(@"SignInProviderKeyDictionary is not configured properly");
-        return nil;
+        return @"SignInProviderKeyDictionary is not configured properly";
     }
 }
-    
-- (NSString *)providerKey:(id<AWSSignInProvider>)signInProvider {
-    AWSServiceInfo *serviceInfo = [[AWSInfo defaultAWSInfo] defaultServiceInfo:AWSInfoIdentityManager];
-    NSDictionary *signInProviderKeyDictionary = [serviceInfo.infoDictionary objectForKey:@"SignInProviderKeyDictionary"];
-    return [signInProviderKeyDictionary objectForKey:NSStringFromClass([signInProvider class])];
-}
-    
+
 - (void)wipeAll {
     [self.credentialsProvider clearKeychain];
 }
-    
-- (void)logoutWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
+// Local caches and the signInProvider logged out but leave the identityId as it is.
+- (void)logoutWithoutCompletionHandler {
     if ([self.currentSignInProvider isLoggedIn]) {
         // must shrink the logins cache so he can log back in
         [self dropLogin: [self.currentSignInProvider identityProviderName]];
         [self.currentSignInProvider logout];
     }
-    
-    [self wipeAll];
-    [signInProviderCache removeObject:self.currentSignInProvider];
+    [self deactivateProvider: self.currentSignInProvider];
     self.currentSignInProvider = nil;
-    
+    // we still have an identityId
+}
+
+- (void)logoutWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
+    [self logoutWithoutCompletionHandler];
+    [self wipeAll];
     //before we go get a new identityId, lets see if we are still logged in with another provider
     [self interceptApplication: [UIApplication sharedApplication] didFinishLaunchingWithOptions:nil];
     
@@ -180,7 +206,7 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
         return nil;
     }];
 }
-    
+
 - (void)loginWithSignInProvider:(id)signInProvider
               completionHandler:(void (^)(id result, NSError *error))completionHandler {
     // modify to allow multiple logins only if Allow Identity Merging is YES in Info.plist
@@ -189,17 +215,31 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
     // we will return logins for all signin providers with an NSUserDefault key of YES
     // Logout will log out the current sign in provider an resume a session with any
     // remaining ones.
+    
+    if (!multiAccountIdentityProviderManager  && self.currentSignInProvider) {
+        [self logoutWithCompletionHandler:^void (id result, NSError *error) {
+            if ( error != nil ) {
+                NSLog( @"Error from logoutWithCompletionHandler %@", error);
+            }
+        }];
+    }
+    if (multiAccountIdentityProviderManager && !mergingIdentityProviderManager) {
+        // in this case, we don't want to let the credentials provider retry till he decides
+        // to do a getcredentials, instead we wipe and force it.
+        // This allows multiple stacked logins without merging
+        [self wipeAll];
+    }
     self.currentSignInProvider = signInProvider;
     
     self.completionHandler = completionHandler;
-    [signInProviderCache addObject:signInProvider];
+    [self activateProvider: self.currentSignInProvider];
     [self.currentSignInProvider login:completionHandler];
 }
-    
+
 - (void)resumeSessionWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
     self.completionHandler = completionHandler;
     
-    for (id<AWSSignInProvider> provider  in signInProviderCache) {
+    for (id<AWSSignInProvider> provider  in [self activeProviders]) {
         [provider reloadSession]; // reload each of the providers that have active sessions
         NSLog(@"Reloading provider: %@", [self providerKey:provider ]);
     }
@@ -208,7 +248,7 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
         [self completeLogin];
     }
 }
-    
+
 - (void)completeLogin {
     // Force a refresh of credentials to see if we need to merge
     [self.credentialsProvider invalidateCachedTemporaryCredentials];
@@ -225,12 +265,33 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
                 AWSLogError(@"Fatal exception: [%@]", task.exception);
                 kill(getpid(), SIGKILL);
             }
-            self.completionHandler(task.result, task.error);
+            
+            // sometimes were are about to "link" an identity (merge) and if it doesn't work
+            // if for instance we a linking two identities that both have linked logins in the same provider.
+            // In that case, Identity Manager provides the error but switches to the new authentication provider anyway!
+            // Instead we need to log out that identity and stick with the one are (it is
+            // a failed login, not logging in with another provider.  We could log out the
+            // first provider and login the second but if we did that we would need to add a
+            // new method (linkAccountWithSignInProvider)".
+            
+            if (task.error.code == AWSCognitoIdentityErrorResourceConflict || task.error != nil) {
+                // any error, and especially cannot merge these identities, should fail the login
+                // so log this guy out and find any existing sessions to restart
+                // Then go find another active session (there surely is one for "cannot merge" errors)
+                [self logoutWithCompletionHandler:^void (id result, NSError *error) {
+                    if ( error != nil ) {
+                        NSLog( @"Error from logoutWithCompletionHandler %@", error);
+                    }
+                    self.completionHandler(task.result, task.error); // done deliver result
+                }];
+            } else {
+                self.completionHandler(task.result, task.error);  // no issues
+            }
         });
         return nil;
     }];
 }
-    
+
 - (BOOL)interceptApplication:(UIApplication *)application
 didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     Class signInProviderClass = nil;
@@ -255,7 +316,7 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
             }
             
             if (self.currentSignInProvider) {
-                [signInProviderCache addObject: self.currentSignInProvider];
+                [self activateProvider: self.currentSignInProvider];
                 if ([self.currentSignInProvider interceptApplication:application
                                        didFinishLaunchingWithOptions:launchOptions]) {
                 }
@@ -265,7 +326,7 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     
     return YES;
 }
-    
+
 - (BOOL)interceptApplication:(UIApplication *)application
                      openURL:(NSURL *)url
            sourceApplication:(NSString *)sourceApplication
@@ -280,5 +341,5 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
         return YES;
     }
 }
-    
-    @end
+
+@end
