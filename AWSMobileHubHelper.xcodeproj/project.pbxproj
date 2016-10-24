@@ -34,6 +34,7 @@
 		1851DD401D25CDB60010B8AA /* AWSUserFileManager.h in CopyFiles */ = {isa = PBXBuildFile; fileRef = 1851DD121D25CC890010B8AA /* AWSUserFileManager.h */; };
 		1851DD511D25CF870010B8AA /* module.modulemap in CopyFiles */ = {isa = PBXBuildFile; fileRef = 1851DD501D25CF7C0010B8AA /* module.modulemap */; };
 		18A3E46C1D52AC5000A3AE26 /* libPods-AWSMobileHubHelper.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 18A3E46B1D52AC5000A3AE26 /* libPods-AWSMobileHubHelper.a */; };
+		E558272B1DBDE29900DC1068 /* README.md in Sources */ = {isa = PBXBuildFile; fileRef = E558272A1DBDE29900DC1068 /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -80,6 +81,7 @@
 		18A3E46B1D52AC5000A3AE26 /* libPods-AWSMobileHubHelper.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = "libPods-AWSMobileHubHelper.a"; path = "/Users/saligram/Library/Developer/Xcode/DerivedData/AWSMobileHubHelper-gyehtqpthehzduaonjwjnaptkadu/Build/Products/Debug-iphonesimulator/libPods-AWSMobileHubHelper.a"; sourceTree = "<absolute>"; };
 		9C8606474456ECAC0A2A47FB /* Pods-AWSMobileHubHelper.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AWSMobileHubHelper.release.xcconfig"; path = "Pods/Target Support Files/Pods-AWSMobileHubHelper/Pods-AWSMobileHubHelper.release.xcconfig"; sourceTree = "<group>"; };
 		B3EA1B7C4DAA1E2BB1B70928 /* Pods-AWSMobileHubHelper.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-AWSMobileHubHelper.debug.xcconfig"; path = "Pods/Target Support Files/Pods-AWSMobileHubHelper/Pods-AWSMobileHubHelper.debug.xcconfig"; sourceTree = "<group>"; };
+		E558272A1DBDE29900DC1068 /* README.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		E5C548121DBBFD9F00816386 /* AWSMobileHubHelper-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "AWSMobileHubHelper-Bridging-Header.h"; sourceTree = "<group>"; };
 		E5C548131DBBFDA000816386 /* AWSCUPIdPSignInProvider.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AWSCUPIdPSignInProvider.swift; sourceTree = "<group>"; };
 		E5C548671DBC325600816386 /* aws-ios-mobile-hub-helper.markdown */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; path = "aws-ios-mobile-hub-helper.markdown"; sourceTree = "<group>"; };
@@ -100,6 +102,7 @@
 		1851DCE41D25C5A30010B8AA = {
 			isa = PBXGroup;
 			children = (
+				E558272A1DBDE29900DC1068 /* README.md */,
 				1851DCEF1D25C5A30010B8AA /* AWSMobileHubHelper */,
 				1851DCEE1D25C5A30010B8AA /* Products */,
 				18A3E46D1D52AC5900A3AE26 /* Frameworks */,
@@ -325,6 +328,7 @@
 				1851DD181D25CC890010B8AA /* AWSFacebookSignInProvider.m in Sources */,
 				1851DD161D25CC890010B8AA /* AWSIdentityManager.m in Sources */,
 				1851DD151D25CC890010B8AA /* AWSContentManager.m in Sources */,
+				E558272B1DBDE29900DC1068 /* README.md in Sources */,
 				1851DD1A1D25CC890010B8AA /* AWSUserFileManager.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
