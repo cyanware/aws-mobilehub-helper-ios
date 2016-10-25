@@ -16,7 +16,7 @@ static NSString *const AWSFacebookSignInProviderUserNameKey = @"Facebook.userNam
 static NSString *const AWSFacebookSignInProviderImageURLKey = @"Facebook.imageURL";
 static NSTimeInterval const AWSFacebookSignInProviderTokenRefreshBuffer = 10 * 60;
 
-typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
+typedef void (^AWSIdentityManagerCompletionBlock)( FBSDKLoginManagerLoginResult * result, NSError *error);
 
 @interface AWSIdentityManager()
 
@@ -202,10 +202,17 @@ typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
                               fromViewController:self.signInViewController
                                          handler:^(FBSDKLoginManagerLoginResult *result, NSError *error) {
                                              if (error) {
-                                                 //[[AWSIdentityManager errorAlert:[NSString stringWithFormat:@"Error logging in with FB: %@", error.localizedDescription]] show];
                                                  self.completionHandler(result, error);
                                              } else if (result.isCancelled) {
                                                  // Login canceled, do nothing
+                                                 // No - Don't do nothing - I don't
+                                                 // really understand the code but we need one,
+                                                 // so I called it login mismatch and dummy'd up
+                                                 // the error message
+                                                 NSMutableDictionary *userInfo = [NSMutableDictionary dictionary];
+                                                 userInfo[@"message"] = @"User Cancelled Login";
+                                                 NSError *resultError = [NSError errorWithDomain:FBSDKLoginErrorDomain code:FBSDKLoginUserMismatchErrorCode userInfo:userInfo];
+                                                 self.completionHandler(result,resultError);
                                              } else {
                                                  [self completeLogin];
                                              }

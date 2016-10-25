@@ -11,11 +11,12 @@
 #import "AWSSignInProvider.h"
 #import "AWSFacebookSignInProvider.h"
 #import "AWSGoogleSignInProvider.h"
+#import "FBSDKLoginManagerLoginResult.h"
 
 NSString *const AWSIdentityManagerDidSignInNotification = @"com.amazonaws.AWSIdentityManager.AWSIdentityManagerDidSignInNotification";
 NSString *const AWSIdentityManagerDidSignOutNotification = @"com.amazonaws.AWSIdentityManager.AWSIdentityManagerDidSignOutNotification";
 
-typedef void (^AWSIdentityManagerCompletionBlock)(id result, NSError *error);
+typedef void (^AWSIdentityManagerCompletionBlock)( FBSDKLoginManagerLoginResult * result, NSError *error);
 
 @interface AWSIdentityManager()
     
@@ -173,8 +174,9 @@ static NSString *const AWSInfoAllowSimultaneousActiveAccounts = @"Allow Simultan
 - (void)wipeAll {
     [self.credentialsProvider clearKeychain];
 }
-// Local caches and the signInProvider logged out but leave the identityId as it is.
-- (void)logoutWithoutCompletionHandler {
+
+
+- (void)logoutWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
     if ([self.currentSignInProvider isLoggedIn]) {
         // must shrink the logins cache so he can log back in
         [self dropLogin: [self.currentSignInProvider identityProviderName]];
@@ -183,10 +185,6 @@ static NSString *const AWSInfoAllowSimultaneousActiveAccounts = @"Allow Simultan
     [self deactivateProvider: self.currentSignInProvider];
     self.currentSignInProvider = nil;
     // we still have an identityId
-}
-
-- (void)logoutWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
-    [self logoutWithoutCompletionHandler];
     [self wipeAll];
     //before we go get a new identityId, lets see if we are still logged in with another provider
     [self interceptApplication: [UIApplication sharedApplication] didFinishLaunchingWithOptions:nil];
@@ -217,7 +215,8 @@ static NSString *const AWSInfoAllowSimultaneousActiveAccounts = @"Allow Simultan
     // remaining ones.
     
     if (!multiAccountIdentityProviderManager  && self.currentSignInProvider) {
-        [self logoutWithCompletionHandler:^void (id result, NSError *error) {
+        [self logoutWithCompletionHandler:^(FBSDKLoginManagerLoginResult *result, NSError *error) {
+            //      [self logoutWithCompletionHandler:^void (id result, NSError *error) {
             if ( error != nil ) {
                 NSLog( @"Error from logoutWithCompletionHandler %@", error);
             }
@@ -232,8 +231,17 @@ static NSString *const AWSInfoAllowSimultaneousActiveAccounts = @"Allow Simultan
     self.currentSignInProvider = signInProvider;
     
     self.completionHandler = completionHandler;
-    [self activateProvider: self.currentSignInProvider];
-    [self.currentSignInProvider login:completionHandler];
+    [self.currentSignInProvider login:^(FBSDKLoginManagerLoginResult *result, NSError *error) {
+        if ( error != nil ) {
+            NSLog( @"Error from login %@, cancelling", error);
+            // quick and dirty housekeeping logout
+            [self dropLogin: [self.currentSignInProvider identityProviderName]];
+            [self deactivateProvider: self.currentSignInProvider];
+            self.currentSignInProvider = nil;
+            
+        }
+        self.completionHandler(result,error);
+    }];
 }
 
 - (void)resumeSessionWithCompletionHandler:(void (^)(id result, NSError *error))completionHandler {
@@ -243,13 +251,16 @@ static NSString *const AWSInfoAllowSimultaneousActiveAccounts = @"Allow Simultan
         [provider reloadSession]; // reload each of the providers that have active sessions
         NSLog(@"Reloading provider: %@", [self providerKey:provider ]);
     }
-    
-    if (self.currentSignInProvider == nil) {
-        [self completeLogin];
-    }
+    // Always do completion handler to guarantee credentials and NSNotification
+    [self completeLogin];
 }
 
 - (void)completeLogin {
+    
+    if ([[self currentSignInProvider] isLoggedIn]) {// (he didn't hit done, cancel or deny?)
+        [self activateProvider: self.currentSignInProvider];
+    }
+    
     // Force a refresh of credentials to see if we need to merge
     [self.credentialsProvider invalidateCachedTemporaryCredentials];
     
