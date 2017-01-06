@@ -180,7 +180,9 @@ static NSString *const AWSInfoAllowSimultaneousActiveAccounts = @"Allow Simultan
         [self dropLogin: [self.currentSignInProvider identityProviderName]];
         [self.currentSignInProvider logout];
     }
-    [self deactivateProvider: self.currentSignInProvider];
+    if (self.currentSignInProvider != nil) {
+        [self deactivateProvider: self.currentSignInProvider];
+    }
     self.currentSignInProvider = nil;
     // we still have an identityId
 }
@@ -274,7 +276,10 @@ static NSString *const AWSInfoAllowSimultaneousActiveAccounts = @"Allow Simultan
             // first provider and login the second but if we did that we would need to add a
             // new method (linkAccountWithSignInProvider)".
             
-            if (task.error.code == AWSCognitoIdentityErrorResourceConflict || task.error != nil) {
+            if (task.error.code == kCFURLErrorNotConnectedToInternet) {
+                // Just inform the caller, no need to logout the user
+                self.completionHandler(task.result, task.error);
+            } else if (task.error.code == AWSCognitoIdentityErrorResourceConflict || task.error != nil) {
                 // any error, and especially cannot merge these identities, should fail the login
                 // so log this guy out and find any existing sessions to restart
                 // Then go find another active session (there surely is one for "cannot merge" errors)
